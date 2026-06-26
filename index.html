@@ -35,10 +35,14 @@
     pointer-events: none;
     max-width: 80%;
   }
-  #reset {
+  #controls {
     position: absolute;
     top: 12px;
     right: 12px;
+    display: flex;
+    gap: 8px;
+  }
+  #controls button {
     background: var(--panel);
     border: 1px solid var(--line);
     color: var(--text);
@@ -48,7 +52,9 @@
     font-size: 12px;
     font-family: inherit;
   }
-  #reset:hover { border-color: var(--accent); }
+  #controls button:hover { border-color: var(--accent); }
+  #controls button:disabled { opacity: .5; cursor: default; }
+  #switch { font-weight: 600; }
   #hint {
     position: absolute;
     bottom: 10px;
@@ -63,11 +69,14 @@
 <body>
   <div id="stage">
     <canvas id="canvas"></canvas>
-    <button id="reset" title="Reset camera">Reset view</button>
+    <div id="controls">
+      <button id="switch" title="Switch model">Switch model</button>
+      <button id="reset" title="Reset camera">Reset view</button>
+    </div>
     <div id="status">Loading…</div>
     <div id="hint">Drag to orbit · Scroll to zoom · Right-drag to pan · Double-click to zoom in</div>
   </div>
- 
+
   <script type="importmap">
   {
     "imports": {
@@ -76,33 +85,38 @@
     }
   }
   </script>
- 
+
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
- 
-    // ── Model to load. Change this filename to swap models. ──
-    const MODEL_URL = 'rabbit.glb';
- 
+
+    // ── Models to cycle through. Add more { name, url } entries as needed. ──
+    const MODELS = [
+      { name: 'Rabbit',    url: 'rabbit.glb' },
+      { name: 'Treadmill', url: 'treadmill.glb' }
+    ];
+    let modelIndex = 0;
+
     const canvas = document.getElementById('canvas');
     const statusEl = document.getElementById('status');
     const resetBtn = document.getElementById('reset');
- 
+    const switchBtn = document.getElementById('switch');
+
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
- 
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1d23);
- 
+
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 5000);
     camera.position.set(2, 1.5, 3);
- 
+
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
- 
+
     scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.1));
     const key = new THREE.DirectionalLight(0xffffff, 1.6);
     key.position.set(3, 5, 4);
@@ -110,18 +124,18 @@
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-4, 2, -3);
     scene.add(fill);
- 
+
     const grid = new THREE.GridHelper(10, 20, 0x353b45, 0x2a2f38);
     scene.add(grid);
- 
+
     let current = null;
- 
+
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
- 
+
     // Smooth camera/target tween state
     let tween = null; // { fromTarget, toTarget, fromPos, toPos, t, dur }
- 
+
     function startTween(toTarget, toPos, dur = 0.5) {
       tween = {
         fromTarget: controls.target.clone(),
@@ -132,9 +146,9 @@
         dur
       };
     }
- 
+
     function easeInOut(x) { return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
- 
+
     function updateTween(dt) {
       if (!tween) return;
       tween.t = Math.min(1, tween.t + dt / tween.dur);
@@ -143,14 +157,14 @@
       camera.position.lerpVectors(tween.fromPos, tween.toPos, e);
       if (tween.t >= 1) tween = null;
     }
- 
+
     function zoomToPoint(point) {
       // Move target to the clicked point and pull the camera ~60% closer along its current view direction.
       const dir = new THREE.Vector3().subVectors(camera.position, controls.target);
       const newPos = new THREE.Vector3().addVectors(point, dir.multiplyScalar(0.4));
       startTween(point, newPos);
     }
- 
+
     function onDoubleClick(event) {
       if (!current) return;
       const rect = canvas.getBoundingClientRect();
@@ -160,9 +174,9 @@
       const hits = raycaster.intersectObject(current, true);
       if (hits.length) zoomToPoint(hits[0].point);
     }
- 
+
     canvas.addEventListener('dblclick', onDoubleClick);
- 
+
     function resize() {
       const w = canvas.clientWidth, h = canvas.clientHeight;
       if (canvas.width !== w || canvas.height !== h) {
@@ -171,7 +185,7 @@
         camera.updateProjectionMatrix();
       }
     }
- 
+
     const clock = new THREE.Clock();
     function animate() {
       requestAnimationFrame(animate);
@@ -181,24 +195,24 @@
       renderer.render(scene, camera);
     }
     animate();
- 
+
     function setStatus(msg, isErr) {
       statusEl.textContent = msg || '';
       statusEl.classList.toggle('err', !!isErr);
       statusEl.style.display = msg ? 'block' : 'none';
     }
- 
+
     function frameObject(obj) {
       const box = new THREE.Box3().setFromObject(obj);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z) || 1;
- 
+
       obj.position.sub(center);
- 
+
       grid.scale.setScalar(maxDim / 5);
       grid.position.y = -size.y / 2;
- 
+
       const dist = maxDim * 2.2;
       camera.position.set(dist * 0.7, dist * 0.5, dist);
       camera.near = maxDim / 100;
@@ -207,16 +221,58 @@
       controls.target.set(0, 0, 0);
       controls.update();
     }
- 
-    new GLTFLoader().load(
-      MODEL_URL,
-      g => { current = g.scene; scene.add(current); frameObject(current); setStatus(''); },
-      null,
-      e => { setStatus('Could not load the model. Check that ' + MODEL_URL + ' sits next to this page.', true); console.error(e); }
-    );
- 
+
+    const loader = new GLTFLoader();
+
+    function disposeCurrent() {
+      if (!current) return;
+      scene.remove(current);
+      current.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(m => {
+            for (const k in m) { if (m[k] && m[k].isTexture) m[k].dispose(); }
+            m.dispose();
+          });
+        }
+      });
+      current = null;
+    }
+
+    function loadModel(i) {
+      const model = MODELS[i];
+      tween = null;
+      switchBtn.disabled = true;
+      setStatus('Loading ' + model.name + '…');
+      loader.load(
+        model.url,
+        g => {
+          disposeCurrent();
+          current = g.scene;
+          scene.add(current);
+          frameObject(current);
+          setStatus('');
+          switchBtn.disabled = false;
+        },
+        null,
+        e => {
+          setStatus('Could not load ' + model.url + '. Check it sits next to this page.', true);
+          switchBtn.disabled = false;
+          console.error(e);
+        }
+      );
+    }
+
+    loadModel(modelIndex);
+
+    switchBtn.addEventListener('click', () => {
+      modelIndex = (modelIndex + 1) % MODELS.length;
+      loadModel(modelIndex);
+    });
+
     controls.addEventListener('start', () => { tween = null; });
- 
+
     resetBtn.addEventListener('click', () => { tween = null; if (current) frameObject(current); });
   </script>
 </body>
